@@ -1,4 +1,4 @@
-/*! neosavvy-javascript-angular-core - v0.1.0 - 2013-09-29
+/*! neosavvy-javascript-angular-core - v0.0.2 - 2013-10-01
 * Copyright (c) 2013 Neosavvy, Inc.; Licensed  */
 var Neosavvy = Neosavvy || {};
 Neosavvy.AngularCore = Neosavvy.AngularCore || {};
@@ -8,27 +8,30 @@ Neosavvy.AngularCore.Services = angular.module('neosavvy.angularcore.services', 
 
 Neosavvy.AngularCore.Directives
     .directive('nsInlineHtml',
-    ['$compile',
-        function ($compile) {
-            return {
-                restrict:'E',
-                template:'<div></div>',
-                replace:true,
-                scope:false,
-                link:function (scope, element, attrs) {
-                    var value = attrs.value || false;
-                    if (!value) {
-                        throw "You must provide an html value on the scope in order to bind inline html!";
-                    }
-                    var dereg = scope.$watch(value, function (value) {
-                        if (value) {
-                            element.replaceWith($compile(angular.element(value))(scope));
-                            dereg();
+        ['$compile',
+            function ($compile) {
+                return {
+                    restrict:'E',
+                    template:'<div></div>',
+                    replace:true,
+                    scope:false,
+                    link:function (scope, element, attrs) {
+                        if (!attrs.hasOwnProperty('value')) {
+                            throw 'You must provide an html value on the scope in order to bind inline html!';
+                        } else {
+                            var dereg = attrs.$observe('value', function (val) {
+                              if (val) {
+                                  var thing = $compile(element.replaceWith(val))(scope);
+                                  dereg();
+                              }
+                              
+                            });
                         }
-                    });
+                        
+                    }
                 }
-            }
-        }]);
+            }]);
+
 Neosavvy.AngularCore.Directives
     .directive('nsStaticInclude',
     ['$http', '$templateCache', '$compile',
@@ -63,7 +66,7 @@ Neosavvy.AngularCore.Directives
                         var replace = function (result) {
                             element.replaceWith($compile(angular.element(result.data))(scope));
                         };
-                        var dereg, request = function () {
+                        var dereg, request = function (val) {
                             $http.get(attrs.src, {cache:$templateCache}).then(replace);
                             if (dereg) {
                                 dereg();
@@ -71,7 +74,12 @@ Neosavvy.AngularCore.Directives
                         };
 
                         if (!_.isEmpty(watchWaitFor)) {
-                            dereg = scope.$watch(watchWaitFor, request);
+                            dereg = scope.$watch(watchWaitFor, function(val) {
+                                 if(angular.isDefined(val)) {
+                                      request();
+                                 }
+                                 
+                            });
                         }
                         else if (!_.isEmpty(waitFor) && parseFloat(waitFor) > 0) {
                             setTimeout(request, parseFloat(waitFor));
@@ -93,7 +101,7 @@ Neosavvy.AngularCore.Directives
             var nsEvent = attrs.nsEvent.replace(/ /g, '').split(",");
             var bindFirst = (!_.isUndefined(attrs.nsEventHighPriority) ? true : false);
             if (nsEvent.length < 2) {
-                throw "Specify and event and handler in order to use the ns-event directive!";
+                throw "Specify an event and handler in order to use the ns-event directive!";
             }
 
             function matchKey(key) {
@@ -113,7 +121,9 @@ Neosavvy.AngularCore.Directives
             function handler(e) {
                 var myScope = findScope(scope, nsEvent[1]);
                 myScope.$event = e;
-                myScope.$apply(nsEvent[1]);
+                myScope.$apply(function() {
+                    myScope[nsEvent[1]]();
+                });
             }
 
             //Initialize event listeners
@@ -136,8 +146,9 @@ Neosavvy.AngularCore.Directives
         }
     }
 }]);
+
 Neosavvy.AngularCore.Directives
-    .directive('nsModelOnblur', function () {
+    .directive('nsModelOnBlur', function () {
         return {
             restrict:'A',
             require:'ngModel',
@@ -153,6 +164,195 @@ Neosavvy.AngularCore.Directives
             }
         };
     });
+
+Neosavvy.AngularCore.Filters.filter('nsCollectionFilterProperties', function () {
+    return function (collection, property, values) {
+        if (collection && values) {
+            return collection.filter(function (item) {
+                return (values.indexOf(Neosavvy.Core.Utils.MapUtils.get(item, property)) !== -1);
+            });
+        }
+        return collection;
+    };
+});
+Neosavvy.AngularCore.Filters.filter('nsCollectionFilterPropertyContains', function () {
+    return function (collection, property, value) {
+        if (collection && value) {
+            return collection.filter(function (item) {
+                return (String(Neosavvy.Core.Utils.MapUtils.get(item, property)).toLowerCase().indexOf(String(value).toLowerCase()) !== -1);
+            });
+        }
+        return collection;
+    };
+});
+Neosavvy.AngularCore.Filters.filter('nsCollectionFilterProperty', function () {
+    return function (collection, property, value) {
+        if (collection && value) {
+            return collection.filter(function (item) {
+                return (Neosavvy.Core.Utils.MapUtils.get(item, property) === value);
+            });
+        }
+        return collection;
+    };
+});
+Neosavvy.AngularCore.Filters.filter('nsCollectionNumericExpression', ['$parse', function ($parse) {
+    return function (data, expressionsAndIndexes, property) {
+        if (data && data.length) {
+            if (expressionsAndIndexes && expressionsAndIndexes.length) {
+                return data.filter(function (item) {
+                    for (var i = 0; i < expressionsAndIndexes.length; i++) {
+                        var expressionAndProperty = expressionsAndIndexes[i];
+                        var expression = expressionAndProperty.expression;
+                        if (!(/</.test(expression)) && !(/>/.test(expression))) {
+                            expression = expression.replace(/=/g, "==");
+                        }
+                        var value = (property ? item[parseInt(expressionAndProperty.index)][property] : item[parseInt(expressionAndProperty.index)]);
+                        if (expression && /\d/.test(expression) && !$parse(String(value) + expression)()) {
+                            return false;
+                        }
+                    }
+                    return true;
+                });
+            }
+            return data;
+        }
+        return [];
+    };
+}]);
+Neosavvy.AngularCore.Filters.filter('nsCollectionPage', function () {
+    return function (collection, page, count) {
+        if (collection && collection.length) {
+            if (page !== undefined && count) {
+                var start = page * count;
+                return collection.slice(start, Math.min(start + count, collection.length));
+            }
+        } else {
+            collection = [];
+        }
+        return collection;
+    };
+});
+Neosavvy.AngularCore.Filters.filter('nsLogicalIf', function () {
+    return function (input, trueValue, falseValue) {
+        return input ? trueValue : falseValue;
+    };
+});
+Neosavvy.AngularCore.Filters.filter("nsTextReplace", function() {
+    return function(val) {
+        if (!_.isEmpty(val) && arguments.length > 1) {
+            for (var i = 1; i < arguments.length; i++) {
+                val = val.replace(new RegExp(arguments[i], 'g'), "");
+            }
+        }
+        return val;
+    };
+});
+
+Neosavvy.AngularCore.Filters.filter("nsTruncate", function () {
+    return function (val, length) {
+        if (!_.isEmpty(val) && length < val.length) {
+            val = val.slice(0, length) + "...";
+        }
+        return val;
+    };
+});
+(function($) {
+    var splitVersion = $.fn.jquery.split(".");
+    var major = parseInt(splitVersion[0]);
+    var minor = parseInt(splitVersion[1]);
+
+    var JQ_LT_17 = (major < 1) || (major == 1 && minor < 7);
+
+    function eventsData($el) {
+        return JQ_LT_17 ? $el.data('events') : $._data($el[0]).events;
+    }
+
+    function moveHandlerToTop($el, eventName, isDelegated) {
+        var data = eventsData($el);
+        var events = data[eventName];
+
+        if (!JQ_LT_17) {
+            var handler = isDelegated ? events.splice(events.delegateCount - 1, 1)[0] : events.pop();
+            events.splice(isDelegated ? 0 : (events.delegateCount || 0), 0, handler);
+
+            return;
+        }
+
+        if (isDelegated) {
+            data.live.unshift(data.live.pop());
+        } else {
+            events.unshift(events.pop());
+        }
+    }
+
+    function moveEventHandlers($elems, eventsString, isDelegate) {
+        var events = eventsString.split(/\s+/);
+        $elems.each(function() {
+            for (var i = 0; i < events.length; ++i) {
+                var pureEventName = $.trim(events[i]).match(/[^\.]+/i)[0];
+                moveHandlerToTop($(this), pureEventName, isDelegate);
+            }
+        });
+    }
+
+    $.fn.bindFirst = function() {
+        var args = $.makeArray(arguments);
+        var eventsString = args.shift();
+
+        if (eventsString) {
+            $.fn.bind.apply(this, arguments);
+            moveEventHandlers(this, eventsString);
+        }
+
+        return this;
+    };
+
+    $.fn.delegateFirst = function() {
+        var args = $.makeArray(arguments);
+        var eventsString = args[1];
+
+        if (eventsString) {
+            args.splice(0, 2);
+            $.fn.delegate.apply(this, arguments);
+            moveEventHandlers(this, eventsString, true);
+        }
+
+        return this;
+    };
+
+    $.fn.liveFirst = function() {
+        var args = $.makeArray(arguments);
+
+        // live = delegate to document
+        args.unshift(this.selector);
+        $.fn.delegateFirst.apply($(document), args);
+
+        return this;
+    };
+
+    if (!JQ_LT_17) {
+        $.fn.onFirst = function(types, selector) {
+            var $el = $(this);
+            var isDelegated = typeof selector === 'string';
+
+            $.fn.on.apply($el, arguments);
+
+            // events map
+            if (typeof types === 'object') {
+                for (type in types)
+                    if (types.hasOwnProperty(type)) {
+                        moveEventHandlers($el, type, isDelegated);
+                    }
+            } else if (typeof types === 'string') {
+                moveEventHandlers($el, types, isDelegated);
+            }
+
+            return $el;
+        };
+    }
+
+})(jQuery);
+
 Neosavvy.AngularCore.Services.factory('nsServiceExtensions',
     ['$q', '$http',
         function ($q, $http) {

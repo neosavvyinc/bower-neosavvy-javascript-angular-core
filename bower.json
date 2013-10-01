@@ -1,12 +1,10 @@
 {
     "name": "neosavvy-javascript-angular-core",
-    "version": "0.0.1",
-    "homepage": "http://www.neosavvy.com",
+    "version": "0.0.2",
     "authors": [
-        "Neosavvy",
-        "Inc."
+        "Neosavvy, Inc."
     ],
-    "description": "The Neosavvy Angular core library.",
+    "description": "The Neosavvy Angular JS core library.",
     "main": "neosavvy-javascript-angular-core.js",
     "keywords": [
         "neosavvy",
@@ -15,6 +13,7 @@
         "html5"
     ],
     "license": "MIT",
+    "homepage": "http://www.neosavvy.com",
     "ignore": [
         "**/.*",
         "node_modules",
@@ -24,9 +23,19 @@
     ],
     "dependencies": {
         "q": "~0.9.7",
-        "zepto": "~1.0.0",
+        "jquery": "~2.0.3",
         "angular": "~1.2.0-rc.2",
         "angular-cache": "~1.2.0",
         "neosavvy-javascript-core": "~0.0.1"
+    },
+    "devDependencies": {
+        "angular-animate": "~1.2.0-rc.2",
+        "angular-cookies": "~1.2.0-rc.2",
+        "angular-loader": "~1.2.0-rc.2",
+        "angular-mocks": "~1.2.0-rc.2",
+        "angular-resource": "~1.2.0-rc.2",
+        "angular-route": "~1.2.0-rc.2",
+        "angular-sanitize": "~1.2.0-rc.2",
+        "angular-touch": "~1.2.0-rc.2"
     }
 }
