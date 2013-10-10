@@ -1,11 +1,224 @@
-/*! neosavvy-javascript-angular-core - v0.0.2 - 2013-10-01
+/*! neosavvy-javascript-angular-core - v0.0.3 - 2013-10-10
 * Copyright (c) 2013 Neosavvy, Inc.; Licensed  */
 var Neosavvy = Neosavvy || {};
 Neosavvy.AngularCore = Neosavvy.AngularCore || {};
+Neosavvy.AngularCore.Analytics = angular.module('neosavvy.angularcore.analytics', []);
 Neosavvy.AngularCore.Directives = angular.module('neosavvy.angularcore.directives', []);
 Neosavvy.AngularCore.Filters = angular.module('neosavvy.angularcore.filters', []);
 Neosavvy.AngularCore.Services = angular.module('neosavvy.angularcore.services', []);
+Neosavvy.AngularCore.Dependencies = ['neosavvy.angularcore.analytics', 'neosavvy.angularcore.directives', 'neosavvy.angularcore.filters', 'neosavvy.angularcore.services'];
 
+(function (window, angular) {
+    var controllers = {};
+    var newInstantiatedController;
+
+    function NsAnalyticsFactoryProvider() {
+        var config = {delay: 1000};
+        var ALL_SCOPE_REGEX = /{{\$scope\..*?}}/g,
+            SCOPE_REPLACE_REGEX = /({{\$scope\.|}})/g,
+            ALL_CONTROLLER_REGEX = /{{\$controller\..*?}}/g,
+            CONTROLLER_REPLACE_REGEX = /({{\$controller\.|}})/g,
+            ALL_ARGS_REGEX = /{{arguments\[\d\]}}/g;
+
+        this.config = function (options) {
+            if (options && typeof options === 'object' && options.callBack) {
+                config = _.merge(config, options);
+            } else {
+                throw "nsAnalytics needs a config object with a callback defined as a single function or an array.";
+            }
+
+            config.baseOptions = options.baseOptions;
+        };
+
+        this.$get = ['$injector', '$rootScope', function ($injector, $rootScope) {
+            var CONTROLLER_DESIGNATION = '$controller',
+                SCOPE_DESIGNATION = '$scope',
+                DESIGNATION_TO_PROPERTIES = {'$controller': 'instance', '$scope': 'scope'},
+                hashedTrackingStrings = {};
+
+            function _track(item, uniqueId, parentArguments, log) {
+                //Name, Options: $scope, $controller, and arguments[x] variables
+                var tracking = hashedTrackingStrings[uniqueId].hashString;
+                if (hashedTrackingStrings[uniqueId].hasScopeVars) {
+                    tracking = tracking.replace(ALL_SCOPE_REGEX,function (match) {
+                        return Neosavvy.Core.Utils.MapUtils.highPerformanceGet(item.scope, match.replace(SCOPE_REPLACE_REGEX, ""));
+                    });
+                }
+                if (hashedTrackingStrings[uniqueId].hasControllerVars) {
+                    tracking = tracking.replace(ALL_CONTROLLER_REGEX,function (match) {
+                        return Neosavvy.Core.Utils.MapUtils.highPerformanceGet(item.instance, match.replace(CONTROLLER_REPLACE_REGEX, ""));
+                    });
+                }
+                if (hashedTrackingStrings[uniqueId].hasArgumentsVars) {
+                    tracking = tracking.replace(ALL_ARGS_REGEX, function (match) {
+                        return parentArguments[parseInt(match.match(/\d/)[0])];
+                    });
+                }
+                tracking = JSON.parse(tracking);
+
+                if (config.callBack) {
+                    if (config.baseOptions) {
+                        tracking.options = _.merge(config.baseOptions, tracking.options);
+                    }
+
+                    if (_.isArray(config.callBack)) {
+                        for (var i = 0; i < config.callBack.length; i++) {
+                            config.callBack[i](tracking.name, tracking.options);
+                        }
+                    } else {
+                        config.callBack(tracking.name, tracking.options);
+                    }
+                }
+
+                if (log) {
+                    log.push(JSON.stringify({name: tracking.name, options: tracking.options}));
+                }
+            }
+
+            function _chooseTrackingDelay(item, tracking, parentArguments, delay, log) {
+                if (delay <= 0) {
+                    _track(item, tracking, parentArguments, log);
+                } else {
+                    setTimeout(function () {
+                        _track(item, tracking, parentArguments, log);
+                    }, delay);
+                }
+            }
+
+            function _cacheTrackingAndReturnUid(hash) {
+                var uniqueId = uuid.v1();
+                var hashString = JSON.stringify(hash);
+                hashedTrackingStrings[uniqueId] = {hashString: hashString,
+                    hasScopeVars: hashString.indexOf("{{$scope.") !== -1,
+                    hasControllerVars: hashString.indexOf("{{$controller") !== -1,
+                    hasArgumentsVars: hashString.indexOf("{arguments[") !== -1};
+                return uniqueId;
+            }
+
+            function _applyMethodTracking(item, designation, methods, delay, log) {
+                if (item && methods) {
+                    var particularItem = item[DESIGNATION_TO_PROPERTIES[designation]];
+                    if (particularItem) {
+                        for (var thing in particularItem) {
+                            //Methods
+                            if (methods[thing] && typeof particularItem[thing] === 'function' && thing !== 'constructor') {
+                                var uniqueId = _cacheTrackingAndReturnUid(methods[thing]);
+                                var copy = angular.copy(particularItem[thing]);
+                                particularItem[thing] = function () {
+                                    copy.apply(copy, arguments);
+                                    _chooseTrackingDelay(item, uniqueId, arguments, delay, log);
+                                };
+                            }
+                        }
+                    }
+                }
+            }
+
+            function _applyWatcherTracking(item, designation, watches, delay, log) {
+                if (item && watches) {
+                    var scope = item[DESIGNATION_TO_PROPERTIES[designation]];
+                    if (scope) {
+                        if (scope && scope.$$watchers && scope.$$watchers.length) {
+                            _.forEach(scope.$$watchers, function (watcher) {
+                                if (watches[watcher.exp]) {
+                                    var uniqueId = _cacheTrackingAndReturnUid(watches[watcher.exp]);
+                                    var copy = watcher.fn;
+                                    watcher.fn = function () {
+                                        copy.apply(copy, arguments);
+                                        _chooseTrackingDelay(item, uniqueId, arguments, delay, log);
+                                    };
+                                }
+                            });
+                        }
+                    }
+                }
+            }
+
+            function _applyEventTracking(item, designation, listeners, delay, log) {
+                if (item && listeners) {
+                    var scope = item[DESIGNATION_TO_PROPERTIES[designation]];
+                    if (scope && scope.$$listeners) {
+                        for (var eventStack in scope.$$listeners) {
+                            if (listeners[eventStack] && scope.$$listeners[eventStack].length) {
+                                var uniqueId = _cacheTrackingAndReturnUid(listeners[eventStack]);
+                                for (var i = 0; i < scope.$$listeners[eventStack].length; i++) {
+                                    var copy = scope.$$listeners[eventStack][i];
+                                    scope.$$listeners[eventStack][i] = function () {
+                                        copy.apply(copy, arguments);
+                                        _chooseTrackingDelay(item, uniqueId, arguments, delay, log);
+                                    };
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            function _applyAllTracking(item, methods, watches, listeners, delay, log) {
+                //Watchers and listeners cannot be applied to a controller instance
+                _applyMethodTracking(item, CONTROLLER_DESIGNATION, methods, delay, log);
+                //Watchers and listeners can be applied to a controller scope
+                _applyMethodTracking(item, SCOPE_DESIGNATION, methods, delay, log);
+                _applyWatcherTracking(item, SCOPE_DESIGNATION, watches, delay, log);
+                _applyEventTracking(item, SCOPE_DESIGNATION, listeners, delay, log);
+            }
+
+            var instantiatedAnalytics = {};
+
+            function nsAnalyticsFactory(injectedName, methods, watches, listeners, delay, log) {
+                var myControllers = controllers[injectedName];
+                delay = delay || delay === 0 ? delay : config.delay;
+                if (newInstantiatedController) {
+                    if (instantiatedAnalytics[injectedName] && instantiatedAnalytics[injectedName].length) {
+                        for (var i = 0; i < instantiatedAnalytics[injectedName].length; i++) {
+                            var args = instantiatedAnalytics[injectedName][i];
+                            _applyAllTracking(newInstantiatedController, args.methods, args.watches, args.listeners, args.delay, args.log);
+                        }
+                    }
+                }
+                else if (myControllers && myControllers.length) {
+                    for (var i = 0; i < myControllers.length; i++) {
+                        _applyAllTracking(myControllers[i], methods, watches, listeners, delay, log);
+                    }
+                    if (methods || watches || listeners) {
+                        //Newly instantiated controllers, getting them up to speed
+                        instantiatedAnalytics[injectedName] = instantiatedAnalytics[injectedName] || [];
+                        instantiatedAnalytics[injectedName].push({methods: methods, watches: watches, listeners: listeners, delay: delay, log: log});
+                    }
+                }
+            }
+
+            //Always clear this out after a run
+            newInstantiatedController = null;
+
+            return nsAnalyticsFactory;
+        }];
+    }
+
+    function ngControllerDirective(nsAnalyticsFactory) {
+        var CNTRL_REG = /^(\S+)(\s+as\s+(\w+))?$/;
+        return {
+            scope: false,
+            priority: -100,
+            require: 'ngController',
+            link: function (scope, element, attrs, ctrl) {
+                //matches[1] is the controller name matches[3] is the name in the DOM
+                var matches = attrs.ngController.match(CNTRL_REG);
+                var name = matches[1];
+                controllers[name] = controllers[name] || [];
+                controllers[name].push({scope: scope, instance: ctrl});
+
+                //Get the new controller up to speed
+                newInstantiatedController = {scope: scope, instance: ctrl};
+                nsAnalyticsFactory(name);
+                newInstantiatedController = null;
+            }
+        }
+    }
+
+    angular.module('neosavvy.angularcore.analytics').provider('nsAnalyticsFactory', NsAnalyticsFactoryProvider);
+    angular.module('neosavvy.angularcore.analytics').directive('ngController', ['nsAnalyticsFactory', ngControllerDirective]);
+})(window, window.angular);
 Neosavvy.AngularCore.Directives
     .directive('nsInlineHtml',
         ['$compile',
@@ -339,7 +552,7 @@ Neosavvy.AngularCore.Filters.filter("nsTruncate", function () {
 
             // events map
             if (typeof types === 'object') {
-                for (type in types)
+                for (var type in types)
                     if (types.hasOwnProperty(type)) {
                         moveEventHandlers($el, type, isDelegated);
                     }
@@ -352,6 +565,76 @@ Neosavvy.AngularCore.Filters.filter("nsTruncate", function () {
     }
 
 })(jQuery);
+
+Neosavvy.AngularCore.Services.factory('nsModal', 
+    [
+        '$compile', 
+        '$document', 
+        function($compile, $document) {
+
+    var body = $document.find('body'),
+        backdrop,
+        overlay,
+        callback;
+
+    function open (scope, templateUrl, closeCallback) {
+
+        if (!scope || typeof scope !== 'object') {
+            throw 'missing scope parameter';
+        }
+
+        if (!templateUrl || typeof templateUrl !== 'string') {
+            throw 'missing template parameter';
+        }
+
+        callback = closeCallback || undefined;
+
+        backdrop = $compile(angular.element('<div ng-click="close()" class="modal-backdrop" style="background:rgba(10,10,10, 0.6); position:fixed; top:0px;right:0px;left:0px;bottom:0px;"></div>'))(scope);
+        overlay = $compile(angular.element('<ng-include class="modal-overlay" src=" \'' + templateUrl + '\' "></ng-include>'))(scope);
+
+        body.append(backdrop);
+        body.append(overlay);
+
+        scope.close = close;
+    }
+
+    function close () {
+        backdrop.remove();
+        overlay.remove();     
+
+        if (typeof callback === 'function') {
+            callback();
+        }
+    }
+
+    return {
+
+        /**
+         * @ngdoc method
+         * @name neosavvy.angularcore.services.services:nsModal#open
+         * @methodOf neosavvy.angularcore.services.services:nsModal
+         *
+         * @description
+         * Calling nsModal.open will open a modal on the screen. 
+         *
+         * @param {Object} scope (required) the scope to use inside the modal. can pass in $scope.$new() for new child scope.
+         * @param {String} templateUrl (required) the location the template to include in the modal
+         * @param {Function} closeCallback (optional) a function call when the modal closes
+         */
+        open: open,
+
+        /**
+         * @ngdoc method
+         * @name neosavvy.angularcore.services.services:nsModal#close
+         * @methodOf neosavvy.angularcore.services.services:nsModal
+         *
+         * @description
+         * Calling nsModal.close will close all open modals
+         *
+         */
+        close: close
+    }
+}]);
 
 Neosavvy.AngularCore.Services.factory('nsServiceExtensions',
     ['$q', '$http',
