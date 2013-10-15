@@ -1,4 +1,4 @@
-/*! neosavvy-javascript-angular-core - v0.0.3 - 2013-10-10
+/*! neosavvy-javascript-angular-core - v0.0.3 - 2013-10-15
 * Copyright (c) 2013 Neosavvy, Inc.; Licensed  */
 var Neosavvy = Neosavvy || {};
 Neosavvy.AngularCore = Neosavvy.AngularCore || {};
@@ -12,7 +12,7 @@ Neosavvy.AngularCore.Dependencies = ['neosavvy.angularcore.analytics', 'neosavvy
     var controllers = {};
     var newInstantiatedController;
 
-    function NsAnalyticsFactoryProvider() {
+    function NsAnalyticsProvider() {
         var config = {delay: 1000};
         var ALL_SCOPE_REGEX = /{{\$scope\..*?}}/g,
             SCOPE_REPLACE_REGEX = /({{\$scope\.|}})/g,
@@ -165,7 +165,7 @@ Neosavvy.AngularCore.Dependencies = ['neosavvy.angularcore.analytics', 'neosavvy
 
             var instantiatedAnalytics = {};
 
-            function nsAnalyticsFactory(injectedName, methods, watches, listeners, delay, log) {
+            function nsAnalytics(injectedName, methods, watches, listeners, delay, log) {
                 var myControllers = controllers[injectedName];
                 delay = delay || delay === 0 ? delay : config.delay;
                 if (newInstantiatedController) {
@@ -180,22 +180,24 @@ Neosavvy.AngularCore.Dependencies = ['neosavvy.angularcore.analytics', 'neosavvy
                     for (var i = 0; i < myControllers.length; i++) {
                         _applyAllTracking(myControllers[i], methods, watches, listeners, delay, log);
                     }
-                    if (methods || watches || listeners) {
-                        //Newly instantiated controllers, getting them up to speed
-                        instantiatedAnalytics[injectedName] = instantiatedAnalytics[injectedName] || [];
-                        instantiatedAnalytics[injectedName].push({methods: methods, watches: watches, listeners: listeners, delay: delay, log: log});
-                    }
+                }
+
+                //Store as instantiated
+                if (methods || watches || listeners) {
+                    //Newly instantiated controllers, getting them up to speed
+                    instantiatedAnalytics[injectedName] = instantiatedAnalytics[injectedName] || [];
+                    instantiatedAnalytics[injectedName].push({methods: methods, watches: watches, listeners: listeners, delay: delay, log: log});
                 }
             }
 
             //Always clear this out after a run
             newInstantiatedController = null;
 
-            return nsAnalyticsFactory;
+            return nsAnalytics;
         }];
     }
 
-    function ngControllerDirective(nsAnalyticsFactory) {
+    function ngControllerDirective(nsAnalytics) {
         var CNTRL_REG = /^(\S+)(\s+as\s+(\w+))?$/;
         return {
             scope: false,
@@ -210,14 +212,14 @@ Neosavvy.AngularCore.Dependencies = ['neosavvy.angularcore.analytics', 'neosavvy
 
                 //Get the new controller up to speed
                 newInstantiatedController = {scope: scope, instance: ctrl};
-                nsAnalyticsFactory(name);
+                nsAnalytics(name);
                 newInstantiatedController = null;
             }
         }
     }
 
-    angular.module('neosavvy.angularcore.analytics').provider('nsAnalyticsFactory', NsAnalyticsFactoryProvider);
-    angular.module('neosavvy.angularcore.analytics').directive('ngController', ['nsAnalyticsFactory', ngControllerDirective]);
+    angular.module('neosavvy.angularcore.analytics').provider('nsAnalytics', NsAnalyticsProvider);
+    angular.module('neosavvy.angularcore.analytics').directive('ngController', ['nsAnalytics', ngControllerDirective]);
 })(window, window.angular);
 Neosavvy.AngularCore.Directives
     .directive('nsInlineHtml',
