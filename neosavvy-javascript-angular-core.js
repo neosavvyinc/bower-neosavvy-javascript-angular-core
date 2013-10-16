@@ -1,4 +1,4 @@
-/*! neosavvy-javascript-angular-core - v0.0.3 - 2013-10-15
+/*! neosavvy-javascript-angular-core - v0.0.3 - 2013-10-16
 * Copyright (c) 2013 Neosavvy, Inc.; Licensed  */
 var Neosavvy = Neosavvy || {};
 Neosavvy.AngularCore = Neosavvy.AngularCore || {};
@@ -743,7 +743,9 @@ Neosavvy.AngularCore.Services.factory('nsServiceExtensions',
                         throw "You must provide a url for each service request.";
                     }
 
-                    var deferred = Q.defer();
+                    // use Q by default, use angular $q if specified
+                    var deferred = (params.$q) ? $q.defer() : Q.defer();
+
                     var cached = getFromCache(params);
                     if (cached) {
                         //cached[0] is status, cached[1] is response, cached[2] is headers
@@ -782,6 +784,7 @@ Neosavvy.AngularCore.Services.factory('nsServiceExtensions',
                             }
                         }
 
+                        xhr.withCredentials = params.cors || false;
                         xhr.open(params.method, params.url, true);
                         xhr.send(data);
                     }
