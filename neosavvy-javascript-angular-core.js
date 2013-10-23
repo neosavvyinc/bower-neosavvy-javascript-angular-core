@@ -1,4 +1,4 @@
-/*! neosavvy-javascript-angular-core - v0.0.3 - 2013-10-16
+/*! neosavvy-javascript-angular-core - v0.0.5 - 2013-10-23
 * Copyright (c) 2013 Neosavvy, Inc.; Licensed  */
 var Neosavvy = Neosavvy || {};
 Neosavvy.AngularCore = Neosavvy.AngularCore || {};
@@ -18,7 +18,8 @@ Neosavvy.AngularCore.Dependencies = ['neosavvy.angularcore.analytics', 'neosavvy
             SCOPE_REPLACE_REGEX = /({{\$scope\.|}})/g,
             ALL_CONTROLLER_REGEX = /{{\$controller\..*?}}/g,
             CONTROLLER_REPLACE_REGEX = /({{\$controller\.|}})/g,
-            ALL_ARGS_REGEX = /{{arguments\[\d\]}}/g;
+            ALL_ARGS_REGEX = /{{arguments\[\d\]}}/g,
+            INJECTED_VALUES_REGEX = /{{[^\s]+?#[^\s]+?}}/g;
 
         this.config = function (options) {
             if (options && typeof options === 'object' && options.callBack) {
@@ -40,18 +41,24 @@ Neosavvy.AngularCore.Dependencies = ['neosavvy.angularcore.analytics', 'neosavvy
                 //Name, Options: $scope, $controller, and arguments[x] variables
                 var tracking = hashedTrackingStrings[uniqueId].hashString;
                 if (hashedTrackingStrings[uniqueId].hasScopeVars) {
-                    tracking = tracking.replace(ALL_SCOPE_REGEX,function (match) {
+                    tracking = tracking.replace(ALL_SCOPE_REGEX, function (match) {
                         return Neosavvy.Core.Utils.MapUtils.highPerformanceGet(item.scope, match.replace(SCOPE_REPLACE_REGEX, ""));
                     });
                 }
                 if (hashedTrackingStrings[uniqueId].hasControllerVars) {
-                    tracking = tracking.replace(ALL_CONTROLLER_REGEX,function (match) {
+                    tracking = tracking.replace(ALL_CONTROLLER_REGEX, function (match) {
                         return Neosavvy.Core.Utils.MapUtils.highPerformanceGet(item.instance, match.replace(CONTROLLER_REPLACE_REGEX, ""));
                     });
                 }
                 if (hashedTrackingStrings[uniqueId].hasArgumentsVars) {
                     tracking = tracking.replace(ALL_ARGS_REGEX, function (match) {
                         return parentArguments[parseInt(match.match(/\d/)[0])];
+                    });
+                }
+                if (hashedTrackingStrings[uniqueId].hasInjectedVars) {
+                    tracking = tracking.replace(INJECTED_VALUES_REGEX, function (match) {
+                        var ar = match.replace(/{{|}}/g, "").split("#");
+                        return Neosavvy.Core.Utils.MapUtils.highPerformanceGet($injector.get(ar[0]), ar[1]);
                     });
                 }
                 tracking = JSON.parse(tracking);
@@ -88,10 +95,13 @@ Neosavvy.AngularCore.Dependencies = ['neosavvy.angularcore.analytics', 'neosavvy
             function _cacheTrackingAndReturnUid(hash) {
                 var uniqueId = uuid.v1();
                 var hashString = JSON.stringify(hash);
+                var injectedMatch = hashString.match(INJECTED_VALUES_REGEX);
                 hashedTrackingStrings[uniqueId] = {hashString: hashString,
                     hasScopeVars: hashString.indexOf("{{$scope.") !== -1,
                     hasControllerVars: hashString.indexOf("{{$controller") !== -1,
-                    hasArgumentsVars: hashString.indexOf("{arguments[") !== -1};
+                    hasArgumentsVars: hashString.indexOf("{arguments[") !== -1,
+                    hasInjectedVars: (injectedMatch && injectedMatch.length)
+                };
                 return uniqueId;
             }
 
@@ -103,11 +113,12 @@ Neosavvy.AngularCore.Dependencies = ['neosavvy.angularcore.analytics', 'neosavvy
                             //Methods
                             if (methods[thing] && typeof particularItem[thing] === 'function' && thing !== 'constructor') {
                                 var uniqueId = _cacheTrackingAndReturnUid(methods[thing]);
-                                var copy = angular.copy(particularItem[thing]);
-                                particularItem[thing] = function () {
-                                    copy.apply(copy, arguments);
-                                    _chooseTrackingDelay(item, uniqueId, arguments, delay, log);
-                                };
+                                particularItem[thing] = (function (copy, uniqueId) {
+                                    return function () {
+                                        copy.apply(copy, arguments);
+                                        _chooseTrackingDelay(item, uniqueId, arguments, delay, log);
+                                    };
+                                })(particularItem[thing], uniqueId);
                             }
                         }
                     }
@@ -122,11 +133,12 @@ Neosavvy.AngularCore.Dependencies = ['neosavvy.angularcore.analytics', 'neosavvy
                             _.forEach(scope.$$watchers, function (watcher) {
                                 if (watches[watcher.exp]) {
                                     var uniqueId = _cacheTrackingAndReturnUid(watches[watcher.exp]);
-                                    var copy = watcher.fn;
-                                    watcher.fn = function () {
-                                        copy.apply(copy, arguments);
-                                        _chooseTrackingDelay(item, uniqueId, arguments, delay, log);
-                                    };
+                                    watcher.fn = (function (copy, uniqueId) {
+                                        return function () {
+                                            copy.apply(copy, arguments);
+                                            _chooseTrackingDelay(item, uniqueId, arguments, delay, log);
+                                        };
+                                    })(watcher.fn, uniqueId);
                                 }
                             });
                         }
@@ -142,11 +154,12 @@ Neosavvy.AngularCore.Dependencies = ['neosavvy.angularcore.analytics', 'neosavvy
                             if (listeners[eventStack] && scope.$$listeners[eventStack].length) {
                                 var uniqueId = _cacheTrackingAndReturnUid(listeners[eventStack]);
                                 for (var i = 0; i < scope.$$listeners[eventStack].length; i++) {
-                                    var copy = scope.$$listeners[eventStack][i];
-                                    scope.$$listeners[eventStack][i] = function () {
-                                        copy.apply(copy, arguments);
-                                        _chooseTrackingDelay(item, uniqueId, arguments, delay, log);
-                                    };
+                                    scope.$$listeners[eventStack][i] = (function (copy, uniqueId) {
+                                        return function () {
+                                            copy.apply(copy, arguments);
+                                            _chooseTrackingDelay(item, uniqueId, arguments, delay, log);
+                                        };
+                                    })(scope.$$listeners[eventStack][i], uniqueId);
                                 }
                             }
                         }
@@ -450,6 +463,25 @@ Neosavvy.AngularCore.Filters.filter('nsCollectionPage', function () {
 Neosavvy.AngularCore.Filters.filter('nsLogicalIf', function () {
     return function (input, trueValue, falseValue) {
         return input ? trueValue : falseValue;
+    };
+});
+Neosavvy.AngularCore.Filters.filter('nsNumericClamp', function () {
+    return function (val, min, max) {
+        if (_.isNumber(val)) {
+            min = (min || min === 0) ? parseFloat(min) : undefined;
+            max = (max || max === 0) ? parseFloat(max) : undefined;
+            val = parseFloat(val);
+            if (_.isNumber(max) && _.isNumber(min) && max < min) {
+                throw "You have created an impossible clamp with this filter.";
+            }
+            if (min || min === 0) {
+                val = Math.max(min, val);
+            }
+            if (max || max === 0) {
+                val = Math.min(max, val);
+            }
+        }
+        return val
     };
 });
 Neosavvy.AngularCore.Filters.filter("nsTextReplace", function() {
