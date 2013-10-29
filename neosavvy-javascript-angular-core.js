@@ -1,4 +1,4 @@
-/*! neosavvy-javascript-angular-core - v0.0.6 - 2013-10-29
+/*! neosavvy-javascript-angular-core - v0.0.7 - 2013-10-29
 * Copyright (c) 2013 Neosavvy, Inc.; Licensed  */
 var Neosavvy = Neosavvy || {};
 Neosavvy.AngularCore = Neosavvy.AngularCore || {};
@@ -252,7 +252,7 @@ Neosavvy.AngularCore.Dependencies = ['neosavvy.angularcore.analytics', 'neosavvy
                 var matches = attrs.ngController.match(CNTRL_REG);
                 var name = matches[1];
                 controllers[name] = controllers[name] || [];
-                controllers[name].push({id: (attrs.id || undefined), scope: scope, instance: ctrl});
+                controllers[name].push({id: (attrs.id || undefined), name: name, scope: scope, instance: ctrl});
 
                 //Get the new controller up to speed
                 newInstantiatedController = controllers[name][controllers[name].length - 1];
