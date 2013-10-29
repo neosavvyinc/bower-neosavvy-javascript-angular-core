@@ -179,7 +179,12 @@ Neosavvy.AngularCore.Dependencies = ['neosavvy.angularcore.analytics', 'neosavvy
             var instantiatedAnalytics = {};
 
             function nsAnalytics(injectedName, methods, watches, listeners, delay, log) {
-                var myControllers = nsControllers.get(injectedName);
+                var myControllers;
+                try {
+                    myControllers = nsControllers.get(injectedName);
+                } catch (e) {
+                    //No controllers instantiated yet
+                }
                 delay = delay || delay === 0 ? delay : config.delay;
                 if (newInstantiatedController) {
                     if (instantiatedAnalytics[injectedName] && instantiatedAnalytics[injectedName].length) {
