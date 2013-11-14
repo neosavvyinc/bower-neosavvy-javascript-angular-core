@@ -1,4 +1,4 @@
-/*! neosavvy-javascript-angular-core - v0.0.8 - 2013-11-13
+/*! neosavvy-javascript-angular-core - v0.0.9 - 2013-11-14
 * Copyright (c) 2013 Neosavvy, Inc.; Licensed  */
 var Neosavvy = Neosavvy || {};
 Neosavvy.AngularCore = Neosavvy.AngularCore || {};
@@ -479,6 +479,20 @@ Neosavvy.AngularCore.Directives
         };
     });
 
+Neosavvy.AngularCore.Directives
+    .directive('nsRequiredIfShown',
+    function () {
+        return {
+            require: 'ngModel',
+            link: function (scope, element, attrs, ctrl) {
+                ctrl.$parsers.unshift(function (viewValue) {
+                    var valid = (!element.is(':visible') || !Neosavvy.Core.Utils.StringUtils.isBlank(viewValue));
+                    ctrl.$setValidity('nsRequiredIfShown', valid);
+                    return valid ? viewValue : undefined;
+                })
+            }
+        }
+    });
 Neosavvy.AngularCore.Directives
     .directive('nsZurbCheckbox',
     function () {
