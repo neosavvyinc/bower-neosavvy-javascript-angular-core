@@ -1,4 +1,4 @@
-/*! neosavvy-javascript-angular-core - v0.1.1 - 2013-12-06
+/*! neosavvy-javascript-angular-core - v0.1.2 - 2013-12-11
 * Copyright (c) 2013 Neosavvy, Inc.; Licensed  */
 var Neosavvy = Neosavvy || {};
 Neosavvy.AngularCore = Neosavvy.AngularCore || {};
@@ -371,13 +371,50 @@ Neosavvy.AngularCore.Directives
                                   var thing = $compile(element.replaceWith(val))(scope);
                                   dereg();
                               }
-                              
                             });
                         }
-                        
                     }
                 }
             }]);
+
+Neosavvy.AngularCore.Directives.directive('nsModal', [
+    'nsModal',
+    function (nsModalService) {
+        return {
+            restrict: 'E',
+            transclude: 'element',
+            replace: true,
+            scope: false,
+            compile: function (tElem, tAttr, transclude) {
+                return function (scope, elem, attr) {
+                    var childScope = scope.$new();
+
+                    if (typeof attr.open !== 'string') {
+                        throw 'an open handler was not specified';
+                    }
+
+                    // close modal on route change
+                    scope.$on('$routeChangeStart', function (e) {
+                        nsModalService.close();
+                    });
+
+                    var closeCallback = scope[attr.callback] || angular.noop;
+
+                    scope[attr.open] = function () {
+                        transclude(childScope, function (clone) {
+                            nsModalService.open(childScope, clone, closeCallback);
+                        });
+                    };
+
+                    scope[attr.close] = function () {
+                        nsModalService.close();
+                    };
+                }
+            }
+        }
+    }
+]);
+
 
 Neosavvy.AngularCore.Directives
     .directive('nsStaticInclude',
@@ -808,44 +845,71 @@ Neosavvy.AngularCore.Filters.filter("nsTruncate", function () {
 
 Neosavvy.AngularCore.Services.factory('nsModal', 
     [
-        '$compile', 
-        '$document', 
-        function($compile, $document) {
+        '$compile',
+        '$document',
+        '$animate',
+        '$timeout',
+        function($compile, $document, $animate, $timeout) {
 
     var body = $document.find('body'),
         backdrop,
         overlay,
         callback;
 
-    function open (scope, templateUrl, closeCallback) {
+    function open (scope, template, closeCallback) {
+
+        var positionWrapper;
 
         if (!scope || typeof scope !== 'object') {
             throw 'missing scope parameter';
         }
 
-        if (!templateUrl || typeof templateUrl !== 'string') {
+        if (template) {
+            callback = closeCallback || undefined;
+
+            backdrop = $compile(angular.element('<div ng-click="close()" class="modal-backdrop" style="background:rgba(10,10,10, 0.6); position:fixed; top:0px;right:0px;left:0px;bottom:0px;"></div>'))(scope);
+
+            // add the inner modal-position wrapper in order to center dynamically sized modals
+            positionWrapper = angular.element('<div class="modal-position"></div>');
+
+            // accept angular.element objects and template URLs
+            if (typeof template === 'object') {
+                positionWrapper.append(template);
+            } else if (typeof template === 'string') {
+                var cTemplate = $compile(angular.element('<ng-include src="\'' + template + '\' "></ng-include>'))(scope);
+                positionWrapper.append(cTemplate);
+            } else {
+                throw "template parameter must be of type object or string";
+            }
+
+            overlay = $compile(angular.element('<div class="modal-overlay" ng-class="modalOverlayClass"></div>'))(scope);
+            overlay.append(positionWrapper);
+
+            scope.close = close;
+
+            $timeout(function () {
+                scope.$apply(function () {
+                    body.append(backdrop);
+                    body.append(overlay);
+                });
+            }, 0);
+
+        } else {
             throw 'missing template parameter';
         }
-
-        callback = closeCallback || undefined;
-
-        backdrop = $compile(angular.element('<div ng-click="close()" class="modal-backdrop" style="background:rgba(10,10,10, 0.6); position:fixed; top:0px;right:0px;left:0px;bottom:0px;"></div>'))(scope);
-        overlay = $compile(angular.element('<ng-include class="modal-overlay" src=" \'' + templateUrl + '\' "></ng-include>'))(scope);
-
-        body.append(backdrop);
-        body.append(overlay);
-
-        scope.close = close;
-    }
+    };
 
     function close () {
-        backdrop.remove();
-        overlay.remove();     
+        if (overlay) {
+            $animate.leave(overlay, function () {
+                backdrop.remove();
+            });
 
-        if (typeof callback === 'function') {
-            callback();
+            if (typeof callback === 'function') {
+                callback();
+            }
         }
-    }
+    };
 
     return {
 
@@ -858,7 +922,7 @@ Neosavvy.AngularCore.Services.factory('nsModal',
          * Calling nsModal.open will open a modal on the screen. 
          *
          * @param {Object} scope (required) the scope to use inside the modal. can pass in $scope.$new() for new child scope.
-         * @param {String} templateUrl (required) the location the template to include in the modal
+         * @param {String|Object} template (required) the location of the template to include in the modal OR an angular.element to include
          * @param {Function} closeCallback (optional) a function call when the modal closes
          */
         open: open,
