@@ -1,4 +1,4 @@
-/*! neosavvy-javascript-angular-core - v0.1.4 - 2013-12-16
+/*! neosavvy-javascript-angular-core - v0.1.5 - 2013-12-31
 * Copyright (c) 2013 Neosavvy, Inc.; Licensed  */
 var Neosavvy = Neosavvy || {};
 Neosavvy.AngularCore = Neosavvy.AngularCore || {};
@@ -666,6 +666,31 @@ Neosavvy.AngularCore.Filters.filter('nsCollectionFilterProperty', function () {
         return collection;
     };
 });
+Neosavvy.AngularCore.Filters.filter('nsCollectionKeyedNumericExpression', ['$parse', function ($parse) {
+    return function (data, propertyToExpressions, property) {
+        if (data && data.length) {
+            if (propertyToExpressions && _.keys(propertyToExpressions).length) {
+                return data.filter(function (item) {
+                    for (var key in propertyToExpressions) {
+                        if (!Neosavvy.Core.Utils.StringUtils.isBlank(propertyToExpressions[key])) {
+                            var expression = propertyToExpressions[key];
+                            if (!(/</.test(expression)) && !(/>/.test(expression))) {
+                                expression = expression.replace(/=/g, "==");
+                            }
+                            if (expression && /\d/.test(expression) &&
+                                !$parse(String(Neosavvy.Core.Utils.MapUtils.highPerformanceGet(item, (property || key))) + expression)()) {
+                                return false;
+                            }
+                        }
+                    }
+                    return true;
+                });
+            }
+            return data;
+        }
+        return [];
+    };
+}]);
 Neosavvy.AngularCore.Filters.filter('nsCollectionNumericExpression', ['$parse', function ($parse) {
     return function (data, expressionsAndIndexes, property) {
         if (data && data.length) {
