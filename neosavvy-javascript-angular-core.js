@@ -1,5 +1,5 @@
-/*! neosavvy-javascript-angular-core - v0.1.5 - 2013-12-31
-* Copyright (c) 2013 Neosavvy, Inc.; Licensed  */
+/*! neosavvy-javascript-angular-core - v0.1.6 - 2014-01-02
+* Copyright (c) 2014 Neosavvy, Inc.; Licensed  */
 var Neosavvy = Neosavvy || {};
 Neosavvy.AngularCore = Neosavvy.AngularCore || {};
 Neosavvy.AngularCore.Analytics = angular.module('neosavvy.angularcore.analytics', []);
@@ -476,6 +476,27 @@ Neosavvy.AngularCore.Directives
             }
         }]);
 
+Neosavvy.AngularCore.Directives
+    .directive('nsRetrieveElement',
+    function () {
+        return {
+            restrict: 'A',
+            scope: false,
+            link: function (scope, element, attrs) {
+                var property = attrs.nsRetrieveElement;
+                if (Neosavvy.Core.Utils.StringUtils.isBlank(attrs.nsRetrieveElement)) {
+                    throw "You must specify a property or function to retrive and element with ns-retrieve-element!";
+                }
+                property = property.replace(/\(.*\)|\(\)/g, "");
+                var prop = Neosavvy.Core.Utils.MapUtils.highPerformanceGet(scope, property);
+                if (typeof prop === "function") {
+                    prop(element);
+                } else {
+                    Neosavvy.Core.Utils.MapUtils.applyTo(scope, property, element);
+                }
+            }
+        }
+    });
 Neosavvy.AngularCore.Directives
     .directive('nsSerialize', ['$injector',
         function ($injector) {
