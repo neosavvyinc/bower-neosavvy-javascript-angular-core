@@ -1,4 +1,4 @@
-/*! neosavvy-javascript-angular-core - v0.1.8 - 2014-01-17
+/*! neosavvy-javascript-angular-core - v0.1.9 - 2014-02-19
 * Copyright (c) 2014 Neosavvy, Inc.; Licensed  */
 var Neosavvy = Neosavvy || {};
 Neosavvy.AngularCore = Neosavvy.AngularCore || {};
