@@ -1,4 +1,4 @@
-/*! neosavvy-javascript-angular-core - v0.1.9 - 2014-02-19
+/*! neosavvy-javascript-angular-core - v0.2.0 - 2014-02-27
 * Copyright (c) 2014 Neosavvy, Inc.; Licensed  */
 var Neosavvy = Neosavvy || {};
 Neosavvy.AngularCore = Neosavvy.AngularCore || {};
@@ -477,6 +477,39 @@ Neosavvy.AngularCore.Directives
         }]);
 
 Neosavvy.AngularCore.Directives
+    .directive('nsAnalyticsHook',
+    function () {
+        return {
+            restrict: 'A',
+            priority: 1000,
+            link: function (scope, element, attrs) {
+                if (Neosavvy.Core.Utils.StringUtils.isBlank(attrs.nsAnalyticsHook)) {
+                    throw "You must provide a name for your analytics hook.";
+                }
+                var ar = attrs.nsAnalyticsHook.split(",");
+                var fnName = ar[0].trim();
+                var event = "click";
+                if (ar.length > 1) {
+                    event = ar[1].trim();
+                }
+                var propArgs = [];
+                if (ar.length > 2) {
+                    for (var i = 2; i < ar.length; i++) {
+                        propArgs.push(ar[i].trim());
+                    }
+                }
+                scope[fnName] = scope[fnName] || new Function();
+                element.bind(event, function () {
+                    scope.$apply(function () {
+                        scope[fnName].apply(this, _.map(propArgs, function (arg) {
+                            return Neosavvy.Core.Utils.MapUtils.highPerformanceGet(scope, arg);
+                        }));
+                    });
+                })
+            }
+        }
+    });
+Neosavvy.AngularCore.Directives
     .directive('nsRetrieveElement',
     function () {
         return {
@@ -749,6 +782,38 @@ Neosavvy.AngularCore.Filters.filter('nsCollectionPage', function () {
         return collection;
     };
 });
+Neosavvy.AngularCore.Filters.filter('nsDateFormatToUnix', function () {
+    return function (val, format) {
+
+        if( Neosavvy.Core.Utils.StringUtils.isBlank(val) ) {
+            return val
+        }
+
+        val = moment(val, (format || undefined));
+
+        if (!Neosavvy.Core.Utils.StringUtils.isBlank(val) && val.isValid()) {
+            return val.unix();
+        } else {
+            throw "You have passed invalid input to nsDateFormatToUnix filter";
+        }
+
+
+    };
+});
+Neosavvy.AngularCore.Filters.filter('nsDateUnixToFormat', function () {
+    return function (val, format) {
+        if (!Neosavvy.Core.Utils.StringUtils.isBlank(val)) {
+            format = format || 'MMMM Do, YYYY';
+            var myMoment = moment.unix(val);
+            if (myMoment.isValid()) {
+                return myMoment.utc().format(format);
+            } else {
+                throw "You have passed an invalid epoch time to the date filter.";
+            }
+        }
+        return val;
+    };
+});
 Neosavvy.AngularCore.Filters.filter('nsLogicalIf', function () {
     return function (input, trueValue, falseValue) {
         return input ? trueValue : falseValue;
@@ -773,6 +838,18 @@ Neosavvy.AngularCore.Filters.filter('nsNumericClamp', function () {
         return val
     };
 });
+Neosavvy.AngularCore.Filters.filter('nsTextMarkdown',
+    ['$sce', function ($sce) {
+        return function (value) {
+            if (/<[a-z][\s\S]*>/i.test(value) == false) {
+                var converter = new Showdown.converter();
+                var html = converter.makeHtml(value || '');
+            } else {
+                var html = value;
+            }
+            return $sce.trustAsHtml(html);
+        };
+    }]);
 Neosavvy.AngularCore.Filters.filter("nsTextReplace", function() {
     return function(val) {
         if (!_.isEmpty(val) && arguments.length > 1) {
@@ -888,6 +965,27 @@ Neosavvy.AngularCore.Filters.filter("nsTruncate", function () {
     }
 
 })(jQuery);
+
+Neosavvy.AngularCore.Services.factory('nsLoadingStatusService', function () {
+
+    var indicators = {},
+        wrapFunction = function (wrapFn, identifier) {
+            if (!identifier)
+                throw 'a valid identifier was not provided, did you forget to include one?';
+
+            return _.partial(function (fn) {
+                indicators[identifier] = true;
+                return fn.apply(null, _.rest(arguments))['finally'](function () {
+                        indicators[identifier] = false; 
+                    });
+            }, wrapFn)
+        };
+
+    return {
+        wrapService: wrapFunction,
+        registeredIndicators: indicators
+    }
+});
 
 Neosavvy.AngularCore.Services.factory('nsModal', 
     [
@@ -1164,7 +1262,7 @@ Neosavvy.AngularCore.Services.factory('nsServiceExtensions',
                     var cached = getFromCache(params);
                     if (cached) {
                         //cached[0] is status, cached[1] is response, cached[2] is headers
-                        deferred.resolve(cached[1]);
+                        deferred.resolve(params.transformResponse ? params.transformResponse(cached[1]) : cached[1]);
                     } else {
                         var request = {type: params.method, url: params.url};
                         if (params.data) {
@@ -1174,7 +1272,8 @@ Neosavvy.AngularCore.Services.factory('nsServiceExtensions',
                             request = _.merge(request, params.ajax);
                         }
                         var jqXhr = $.ajax(request);
-                        jqXhr.done(function (data) {
+                        jqXhr.done(function (data, textStatus) {
+                                storeInCache(params, textStatus, jqXhr.responseText, jqXhr.getAllResponseHeaders());
                                 if (params.transformResponse) {
                                     //responseJSON for IE9 compatibility
                                     data = params.transformResponse(
