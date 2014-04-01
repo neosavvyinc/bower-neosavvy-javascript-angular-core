@@ -1,4 +1,4 @@
-/*! neosavvy-javascript-angular-core - v0.2.0 - 2014-03-10
+/*! neosavvy-javascript-angular-core - v0.2.0 - 2014-04-01
 * Copyright (c) 2014 Neosavvy, Inc.; Licensed  */
 var Neosavvy = Neosavvy || {};
 Neosavvy.AngularCore = Neosavvy.AngularCore || {};
@@ -1155,6 +1155,28 @@ Neosavvy.AngularCore.Services.factory('nsServiceExtensions',
                 }
             }
 
+            /**
+             * Below to functions from: https://docs.djangoproject.com/en/dev/ref/contrib/csrf/
+             */
+            function csrfSafeMethod(method) {
+                // these HTTP methods do not require CSRF protection
+                return (/^(GET|HEAD|OPTIONS|TRACE)$/.test(method));
+            }
+
+            function sameOrigin(url) {
+                // test that a given url is a same-origin URL
+                // url could be relative or scheme relative or absolute
+                var host = document.location.host; // host + port
+                var protocol = document.location.protocol;
+                var sr_origin = '//' + host;
+                var origin = protocol + sr_origin;
+                // Allow absolute or scheme relative URLs to same origin
+                return (url == origin || url.slice(0, origin.length + 1) == origin + '/') ||
+                    (url == sr_origin || url.slice(0, sr_origin.length + 1) == sr_origin + '/') ||
+                    // or any other URL that isn't scheme relative or absolute i.e relative.
+                    !(/^(\/\/|http:|https:).*/.test(url));
+            }
+
             return {
                 /**
                  * @ngdoc method
@@ -1302,6 +1324,18 @@ Neosavvy.AngularCore.Services.factory('nsServiceExtensions',
                         }
                         if (params.ajax) {
                             request = _.merge(request, params.ajax);
+                        }
+                        if (params.csrfToken) {
+                            $.ajaxSetup({
+                                beforeSend: function(xhr, settings) {
+                                    if (!csrfSafeMethod(settings.type) && sameOrigin(settings.url)) {
+                                        // Send the token to same-origin, relative URLs only.
+                                        // Send the token only if the method warrants CSRF protection
+                                        // Using the CSRFToken value acquired earlier
+                                        xhr.setRequestHeader("X-CSRFToken", params.csrfToken);
+                                    }
+                                }
+                            });
                         }
                         var jqXhr = $.ajax(request);
                         jqXhr.done(function (data, textStatus) {
